@@ -1,6 +1,6 @@
 #!/bin/bash
 # Ubuntu 26.04 vSphere Template Setup Script
-# Usage: sudo bash vsphere-template-setup.sh
+# Usage: sudo bash vsphere-template-setup.sh1
 
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo bash $0"
