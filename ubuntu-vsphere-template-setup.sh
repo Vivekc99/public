@@ -1,6 +1,6 @@
 #!/bin/bash
 # Ubuntu 26.04 vSphere Template Setup Script
-# Usage: wget -O setup.sh https://YOUR-SERVER/vsphere-template-setup.sh && sudo bash setup.sh
+# Usage: sudo bash vsphere-template-setup.sh
 
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo bash $0"
@@ -15,66 +15,43 @@ echo "=============================="
 echo " Ubuntu vSphere Template Setup"
 echo "=============================="
 echo ""
-
-# Collect passwords
-collect_password() {
-    local LABEL="$1"
-    local PASS1=""
-    local PASS2=""
-    while true; do
-        stty -echo
-        printf "Enter password for %s: " "$LABEL"
-        read PASS1
-        echo ""
-        printf "Confirm password for %s: " "$LABEL"
-        read PASS2
-        echo ""
-        stty echo
-        if [ "$PASS1" = "$PASS2" ] && [ -n "$PASS1" ]; then
-            echo "$PASS1"
-            return
-        fi
-        echo "Passwords do not match or are empty. Try again."
-    done
-}
-
-echo "You will be prompted to set passwords for: root, ubuntu, vnadmin"
+echo "NOTE: Passwords will be visible as you type (vSphere console)"
 echo ""
 
-ROOT_PASS=$(collect_password "root")
-UBUNTU_PASS=$(collect_password "ubuntu")
-VNADMIN_PASS=$(collect_password "vnadmin")
+printf "Set password for ROOT: "
+read ROOT_PASS
+printf "Set password for UBUNTU: "
+read UBUNTU_PASS
+printf "Set password for VNADMIN: "
+read VNADMIN_PASS
 
 echo ""
 echo "Passwords collected. Starting setup..."
 echo ""
 
 # Timezone and locale
-echo "Setting timezone to Australia/Brisbane..."
+echo "[1/10] Setting timezone to Australia/Brisbane..."
 timedatectl set-timezone Australia/Brisbane
 localectl set-locale LANG=en_AU.UTF-8 2>/dev/null || true
-echo "Done."
 
 # Updates
-echo "Running system updates (this may take a while)..."
+echo "[2/10] Running system updates (this may take a while)..."
 apt-get update -y -q
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q
 DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -q
 apt-get autoremove -y -q
 apt-get autoclean -y -q
-echo "Updates done."
 
 # Set passwords
-echo "Setting passwords..."
+echo "[3/10] Setting passwords and enabling root..."
 echo "root:${ROOT_PASS}" | chpasswd
 if id "ubuntu" &>/dev/null; then
     echo "ubuntu:${UBUNTU_PASS}" | chpasswd
 fi
 passwd -u root 2>/dev/null || true
-echo "Done."
 
 # Create vnadmin
-echo "Creating vnadmin user..."
+echo "[4/10] Creating vnadmin user..."
 if id "vnadmin" &>/dev/null; then
     echo "vnadmin already exists, updating password."
 else
@@ -82,17 +59,15 @@ else
 fi
 echo "vnadmin:${VNADMIN_PASS}" | chpasswd
 usermod -aG sudo vnadmin
-echo "Done."
 
 # Create /VN
-echo "Creating /VN directory..."
+echo "[5/10] Creating /VN directory..."
 mkdir -p /VN
 chmod 1777 /VN
 chown root:root /VN
-echo "Done."
 
 # Configure SSH
-echo "Configuring SSH on port $SSH_PORT..."
+echo "[6/10] Configuring SSH on port $SSH_PORT..."
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 
 sed -i "s/^#*Port .*/Port ${SSH_PORT}/" /etc/ssh/sshd_config
@@ -106,7 +81,6 @@ grep -q "^PermitRootLogin" /etc/ssh/sshd_config || echo "PermitRootLogin yes" >>
 
 sed -i 's/^#*KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config
 
-# Handle systemd SSH socket if present
 if systemctl list-units --full --all 2>/dev/null | grep -q "ssh.socket"; then
     mkdir -p /etc/systemd/system/ssh.socket.d
     cat > /etc/systemd/system/ssh.socket.d/override.conf << EOF
@@ -117,10 +91,8 @@ EOF
     systemctl daemon-reload
 fi
 
-echo "Done."
-
-# Install and configure Cockpit
-echo "Installing Cockpit on port $COCKPIT_PORT..."
+# Cockpit
+echo "[7/10] Installing Cockpit on port $COCKPIT_PORT..."
 DEBIAN_FRONTEND=noninteractive apt-get install -y -q cockpit
 mkdir -p /etc/systemd/system/cockpit.socket.d
 cat > /etc/systemd/system/cockpit.socket.d/listen.conf << EOF
@@ -131,42 +103,35 @@ EOF
 systemctl daemon-reload
 systemctl enable cockpit.socket
 systemctl restart cockpit.socket 2>/dev/null || true
-echo "Done."
 
-# Remove UFW, install firewalld
-echo "Removing UFW and installing firewalld..."
+# Firewall
+echo "[8/10] Installing firewalld..."
 if dpkg -l 2>/dev/null | grep -q "^ii.*ufw"; then
     ufw disable 2>/dev/null || true
-    apt-get remove -y -q ufw
-    apt-get purge -y -q ufw
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y -q ufw
+    DEBIAN_FRONTEND=noninteractive apt-get purge -y -q ufw
 fi
 DEBIAN_FRONTEND=noninteractive apt-get install -y -q firewalld
 systemctl enable firewalld
 systemctl start firewalld
-
 firewall-cmd --permanent --remove-service=ssh 2>/dev/null || true
 firewall-cmd --permanent --remove-service=cockpit 2>/dev/null || true
 firewall-cmd --permanent --add-port=${SSH_PORT}/tcp
 firewall-cmd --permanent --add-port=${COCKPIT_PORT}/tcp
 firewall-cmd --reload
-echo "Done."
 
 # Restart SSH
-echo "Restarting SSH..."
+echo "[9/10] Restarting SSH..."
 systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
-echo "Done."
 
 # Disable cloud-init
-echo "Disabling cloud-init..."
+echo "[10/10] Disabling cloud-init and running cleanup..."
 touch /etc/cloud/cloud-init.disabled
 mkdir -p /etc/cloud/cloud.cfg.d
 cat > /etc/cloud/cloud.cfg.d/99-datasource.cfg << EOF
 datasource_list: [ None ]
 EOF
-echo "Done."
 
-# Template cleanup
-echo "Running template cleanup..."
 cloud-init clean --logs 2>/dev/null || true
 rm -f /etc/ssh/ssh_host_*
 truncate -s 0 /etc/machine-id
@@ -179,7 +144,6 @@ cat /dev/null > ~/.bash_history
 [ -f /home/vnadmin/.bash_history ] && cat /dev/null > /home/vnadmin/.bash_history
 rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
 find /var/log -type f -exec truncate -s 0 {} \; 2>/dev/null || true
-echo "Done."
 
 echo ""
 echo "=============================="
@@ -187,25 +151,20 @@ echo " Setup Complete"
 echo "=============================="
 echo " SSH port     : $SSH_PORT"
 echo " Cockpit port : $COCKPIT_PORT"
-echo " Users        : root, ubuntu, vnadmin (sudo)"
-echo " /VN          : created (1777)"
-echo " Firewall     : firewalld, ports $SSH_PORT and $COCKPIT_PORT open"
-echo " cloud-init   : disabled"
 echo " Timezone     : Australia/Brisbane"
+echo " Users        : root, ubuntu, vnadmin (sudo)"
+echo " /VN          : created"
+echo " Firewall     : firewalld active"
+echo " cloud-init   : disabled"
 echo "=============================="
 echo ""
-echo "Next step: In vSphere, right-click the VM and choose:"
-echo "  Template > Convert to Template"
-echo ""
-
-printf "Shut down now to prepare for templating? [y/N]: "
+printf "Shut down now for templating? [y/N]: "
 read SHUTDOWN_ANSWER
 echo ""
-
 if [ "$SHUTDOWN_ANSWER" = "y" ] || [ "$SHUTDOWN_ANSWER" = "Y" ]; then
     echo "Shutting down in 5 seconds..."
     sleep 5
     shutdown -h now
 else
-    echo "Skipped. Run 'sudo shutdown -h now' when ready."
+    echo "Run 'sudo shutdown -h now' when ready, then convert to template in vSphere."
 fi
