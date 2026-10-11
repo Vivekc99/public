@@ -18,6 +18,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -174,6 +176,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 path = dir
                 entries = list
                 if (navigating) navToken++
+                if (searchActive && deepSearch) runDeepSearch()
                 selection = selection.filter { s -> list.any { it.path == s } }.toSet()
             } catch (e: CancellationException) {
                 throw e
@@ -187,8 +190,96 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun refresh() = load(path)
 
+    // ------------------------------------------------------------- search
+
+    var searchActive by mutableStateOf(false); private set
+    var query by mutableStateOf(""); private set
+    var deepSearch by mutableStateOf(false); private set
+    var deepResults by mutableStateOf<List<NasEntry>>(emptyList()); private set
+    var searching by mutableStateOf(false); private set
+    private var searchJob: Job? = null
+    private var searchSeq = 0
+
+    fun startSearch() { searchActive = true }
+
+    fun closeSearch() {
+        searchJob?.cancel()
+        searchActive = false
+        query = ""
+        deepSearch = false
+        deepResults = emptyList()
+        searching = false
+    }
+
+    fun updateQuery(q: String) {
+        query = q
+        if (deepSearch) runDeepSearch()
+    }
+
+    fun toggleDeepSearch() {
+        deepSearch = !deepSearch
+        if (deepSearch) {
+            runDeepSearch()
+        } else {
+            searchJob?.cancel()
+            deepResults = emptyList()
+            searching = false
+        }
+    }
+
+    /** Looks through this folder and everything inside it, skipping hidden system folders. */
+    private fun runDeepSearch() {
+        searchJob?.cancel()
+        val q = query.trim()
+        val p = current ?: return
+        if (q.isEmpty()) { deepResults = emptyList(); searching = false; return }
+        val root = path
+        val mine = ++searchSeq
+        searchJob = viewModelScope.launch {
+            searching = true
+            try {
+                delay(300)
+                val conn = nas.pool.get(p)
+                val found = ArrayList<NasEntry>()
+                withContext(Dispatchers.IO) {
+                    val queue = ArrayDeque<String>()
+                    queue.add(root)
+                    while (queue.isNotEmpty() && found.size < 1000) {
+                        ensureActive()
+                        val dir = queue.removeFirst()
+                        val list = try {
+                            conn.list(dir)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            continue
+                        }
+                        for (c in list) {
+                            if (!showHidden && isHidden(c.name)) continue
+                            if (nameMatches(c.name, q)) found.add(c)
+                            if (c.isDir) queue.add(c.path)
+                        }
+                        deepResults = found.toList()
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                toast("Search failed: ${e.friendly()}")
+            } finally {
+                if (mine == searchSeq) searching = false
+            }
+        }
+    }
+
     fun visibleEntries(): List<NasEntry> {
-        val base = if (showHidden) entries else entries.filterNot { isHidden(it.name) }
+        val q = query.trim()
+        val source = when {
+            !searchActive || q.isEmpty() -> entries
+            deepSearch -> deepResults
+            else -> entries.filter { nameMatches(it.name, q) }
+        }
+        val base = if (showHidden) source else source.filterNot { isHidden(it.name) }
         val dirsFirst = compareBy<NasEntry> { !it.isDir }
         val byName = compareBy<NasEntry, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
         val key: Comparator<NasEntry> = when (sort) {
@@ -209,6 +300,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         when {
             overlay != null -> overlay = null
             selection.isNotEmpty() -> selection = emptySet()
+            searchActive -> closeSearch()
             current != null -> if (path.isEmpty()) {
                 loadJob?.cancel()
                 current = null
@@ -218,7 +310,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun open(e: NasEntry) {
-        if (e.isDir) { load(e.path); return }
+        if (e.isDir) { closeSearch(); load(e.path); return }
         val files = visibleEntries().filter { !it.isDir }
         overlay = Overlay.Gallery(files, files.indexOf(e).coerceAtLeast(0))
     }
@@ -287,7 +379,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun selectAll() { selection = visibleEntries().map { it.path }.toSet() }
     fun clearSelection() { selection = emptySet() }
-    fun selected(): List<NasEntry> = entries.filter { it.path in selection }
+    fun selected(): List<NasEntry> =
+        (entries + deepResults).filter { it.path in selection }.distinctBy { it.path }
 
     // ------------------------------------------------------------ actions
 

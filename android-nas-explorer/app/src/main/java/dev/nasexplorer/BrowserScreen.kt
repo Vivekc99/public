@@ -20,7 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
@@ -37,7 +37,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,7 +66,7 @@ private sealed interface Dlg {
 @Composable
 fun BrowserScreen(vm: AppViewModel) {
     val profile = vm.current ?: return
-    val items = remember(vm.entries, vm.sort, vm.sortDesc, vm.showHidden) { vm.visibleEntries() }
+    val items = remember(vm.entries, vm.sort, vm.sortDesc, vm.showHidden, vm.query, vm.searchActive, vm.deepSearch, vm.deepResults) { vm.visibleEntries() }
     val selecting = vm.selection.isNotEmpty()
     val tasks by vm.transfers.tasks.collectAsState()
     val activeCount = tasks.count { it.active }
@@ -81,6 +85,22 @@ fun BrowserScreen(vm: AppViewModel) {
                 title = {
                     if (selecting) {
                         Text("${vm.selection.size} selected")
+                    } else if (vm.searchActive) {
+                        val focus = remember { FocusRequester() }
+                        LaunchedEffect(Unit) { focus.requestFocus() }
+                        TextField(
+                            value = vm.query,
+                            onValueChange = { vm.updateQuery(it) },
+                            placeholder = { Text("Search by name") },
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                            modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                        )
                     } else {
                         Column {
                             Text(profile.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -95,14 +115,18 @@ fun BrowserScreen(vm: AppViewModel) {
                 },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) {
-                        Icon(if (selecting) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(if (selecting || vm.searchActive) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
                 actions = {
                     if (selecting) {
                         TextButton(onClick = { vm.selectAll() }) { Text("All") }
+                    } else if (vm.searchActive) {
+                        TextButton(onClick = { vm.toggleDeepSearch() }) {
+                            Text(if (vm.deepSearch) "✓ Subfolders" else "Subfolders")
+                        }
                     } else {
-                        IconButton(onClick = { vm.refresh() }) { Icon(Icons.Default.Refresh, "Refresh") }
+                        IconButton(onClick = { vm.startSearch() }) { Icon(Icons.Default.Search, "Search") }
                         Box {
                             TextButton(onClick = { viewMenu = true }) { Text("▦") }
                             DropdownMenu(expanded = viewMenu, onDismissRequest = { viewMenu = false }) {
@@ -120,6 +144,8 @@ fun BrowserScreen(vm: AppViewModel) {
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Menu") }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(text = { Text("Refresh") },
+                                    onClick = { menu = false; vm.refresh() })
                                 DropdownMenuItem(text = { Text("Upload files…") },
                                     onClick = { menu = false; pickFiles.launch(arrayOf("*/*")) })
                                 DropdownMenuItem(text = { Text("Upload folder…") },
@@ -187,10 +213,13 @@ fun BrowserScreen(vm: AppViewModel) {
                     Text(err, color = MaterialTheme.colorScheme.error)
                     TextButton(onClick = { vm.refresh() }) { Text("Retry") }
                 }
-                !vm.loading && items.isEmpty() -> Text("Empty folder", Modifier.align(Alignment.Center))
+                !vm.loading && items.isEmpty() && !vm.searching -> Text(
+                    if (vm.searchActive && vm.query.isNotBlank()) "No matches" else "Empty folder",
+                    Modifier.align(Alignment.Center),
+                )
                 else -> FileList(vm, items)
             }
-            if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
+            if (vm.loading || vm.searching) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
             vm.busy?.let {
                 Text(
                     it,

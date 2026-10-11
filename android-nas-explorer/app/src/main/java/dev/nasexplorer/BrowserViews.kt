@@ -115,7 +115,8 @@ private fun SimpleList(vm: AppViewModel, items: List<NasEntry>, modifier: Modifi
                 Column(Modifier.weight(1f)) {
                     Text(e.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        (if (e.isDir) "" else humanSize(e.size) + " · ") + humanDate(vm.shownDate(e)),
+                        (if (vm.searchActive && vm.deepSearch) "/${parentPath(e.path)}  ·  " else "") +
+                            (if (e.isDir) "" else humanSize(e.size) + " · ") + humanDate(vm.shownDate(e)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -155,8 +156,14 @@ private fun DetailsList(vm: AppViewModel, items: List<NasEntry>, modifier: Modif
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(iconFor(e), fontSize = 20.sp, modifier = Modifier.width(34.dp))
-                    Text(e.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium)
+                    Column(Modifier.weight(1f)) {
+                        Text(e.name, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium)
+                        if (vm.searchActive && vm.deepSearch) {
+                            Text("/${parentPath(e.path)}", maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall, color = dim)
+                        }
+                    }
                     Text(if (e.isDir) "" else humanSize(e.size), Modifier.width(76.dp),
                         style = MaterialTheme.typography.bodySmall, color = dim, textAlign = TextAlign.End)
                     Text(shortDate(vm.shownDate(e)), Modifier.width(84.dp),

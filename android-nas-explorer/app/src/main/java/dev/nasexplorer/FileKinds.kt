@@ -59,3 +59,9 @@ fun bigIconFor(name: String): String = when (name.substringAfterLast('.', "").lo
     "iso", "img" -> "💿"
     else -> "📄"
 }
+
+/** True when every word typed appears somewhere in the file name (ignoring case). */
+fun nameMatches(name: String, query: String): Boolean {
+    val n = name.lowercase()
+    return query.lowercase().split(' ').filter { it.isNotBlank() }.all { n.contains(it) }
+}
