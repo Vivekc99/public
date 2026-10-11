@@ -49,6 +49,17 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     var overlay by mutableStateOf<Overlay?>(null)
 
     val transfers get() = nas.transfers
+    val thumbs get() = nas.thumbs
+
+    private val uiPrefs = app.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+    var viewMode by mutableStateOf(
+        runCatching { ViewMode.valueOf(uiPrefs.getString("view", "") ?: "") }.getOrDefault(ViewMode.Simple)
+    ); private set
+
+    fun setViewMode(m: ViewMode) {
+        viewMode = m
+        uiPrefs.edit().putString("view", m.name).apply()
+    }
     val pool get() = nas.pool
     val intents = Channel<Intent>(Channel.BUFFERED)
 

@@ -67,6 +67,7 @@ fun BrowserScreen(vm: AppViewModel) {
     val activeCount = tasks.count { it.active }
     var menu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
+    var viewMenu by remember { mutableStateOf(false) }
     var dlg by remember { mutableStateOf<Dlg?>(null) }
 
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.upload(it) }
@@ -100,6 +101,17 @@ fun BrowserScreen(vm: AppViewModel) {
                         TextButton(onClick = { vm.selectAll() }) { Text("All") }
                     } else {
                         IconButton(onClick = { vm.refresh() }) { Icon(Icons.Default.Refresh, "Refresh") }
+                        Box {
+                            TextButton(onClick = { viewMenu = true }) { Text("▦") }
+                            DropdownMenu(expanded = viewMenu, onDismissRequest = { viewMenu = false }) {
+                                ViewMode.entries.forEach { m ->
+                                    DropdownMenuItem(
+                                        text = { Text((if (vm.viewMode == m) "✓  " else "     ") + m.label) },
+                                        onClick = { viewMenu = false; vm.setViewMode(m) },
+                                    )
+                                }
+                            }
+                        }
                         TextButton(onClick = { vm.overlay = Overlay.Transfers }) {
                             Text(if (activeCount > 0) "⇅ $activeCount" else "⇅")
                         }
@@ -167,33 +179,7 @@ fun BrowserScreen(vm: AppViewModel) {
                     TextButton(onClick = { vm.refresh() }) { Text("Retry") }
                 }
                 !vm.loading && items.isEmpty() -> Text("Empty folder", Modifier.align(Alignment.Center))
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(items, key = { it.path }) { e ->
-                        val sel = e.path in vm.selection
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .background(if (sel) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-                                .combinedClickable(
-                                    onClick = { if (selecting) vm.toggle(e) else vm.open(e) },
-                                    onLongClick = { vm.toggle(e) },
-                                )
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(iconFor(e), fontSize = 26.sp)
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(e.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    (if (e.isDir) "" else humanSize(e.size) + " · ") + humanDate(e.modified),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (selecting) Checkbox(checked = sel, onCheckedChange = null)
-                        }
-                    }
-                }
+                else -> FileList(vm, items)
             }
             if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
             vm.busy?.let {

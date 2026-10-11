@@ -2,7 +2,6 @@ package dev.nasexplorer
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.media.ExifInterface
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -260,12 +259,5 @@ private fun decode(bytes: ByteArray): Bitmap {
     } catch (_: Exception) {
         ExifInterface.ORIENTATION_NORMAL
     }
-    val m = Matrix()
-    when (orientation) {
-        ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
-        ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
-        ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
-        else -> return bmp
-    }
-    return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+    return rotateByExif(bmp, orientation)
 }
