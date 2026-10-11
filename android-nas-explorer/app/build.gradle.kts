@@ -16,18 +16,23 @@ android {
         versionName = "1.0"
     }
 
+    // The release key is NOT in the repo. CI passes it in through environment variables
+    // (built from GitHub Actions secrets), see .github/workflows/build-android-apk.yml.
+    val keystorePath: String? = System.getenv("KEYSTORE_PATH")
     signingConfigs {
-        create("release") {
-            storeFile = file("nas-explorer.jks")
-            storePassword = "nasexplorer"
-            keyAlias = "nasexplorer"
-            keyPassword = "nasexplorer"
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
         }
     }

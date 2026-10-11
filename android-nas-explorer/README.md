@@ -15,5 +15,7 @@ Needs JDK 17 and the Android SDK (platform 35): `./gradlew assembleRelease`
 - Protocol: SMB 2/3 (via smbj). SMB1-only NAS devices are not supported.
 - Downloads are saved to `Downloads/NAS/` on the phone.
 - Passwords are stored encrypted with the Android Keystore.
-- The APK is signed with the keystore in `app/nas-explorer.jks` (password in `app/build.gradle.kts`).
-  That key is public; fine for a personal sideloaded app, don't reuse it for anything you publish.
+- The APK is signed with a private key kept in GitHub Actions secrets (`KEYSTORE_BASE64`,
+  `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`). It is not in the repo. Keep a backup of the
+  keystore + password: without them an installed app can't be updated, only reinstalled.
+- Protocols: SMB, SFTP (SSH), WebDAV.
