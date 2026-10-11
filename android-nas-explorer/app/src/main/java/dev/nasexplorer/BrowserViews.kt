@@ -100,7 +100,7 @@ fun FileList(vm: AppViewModel, items: List<NasEntry>, modifier: Modifier = Modif
 @Composable
 private fun SimpleList(vm: AppViewModel, items: List<NasEntry>, modifier: Modifier) {
     val selecting = vm.selection.isNotEmpty()
-    LazyColumn(modifier.fillMaxSize()) {
+    LazyColumn(modifier.fillMaxSize(), state = vm.listState) {
         items(items, key = { it.path }) { e ->
             val sel = e.path in vm.selection
             Row(
@@ -144,7 +144,7 @@ private fun DetailsList(vm: AppViewModel, items: List<NasEntry>, modifier: Modif
                 style = MaterialTheme.typography.labelMedium, color = dim, textAlign = TextAlign.End)
         }
         HorizontalDivider()
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = vm.listState) {
             items(items, key = { it.path }) { e ->
                 val sel = e.path in vm.selection
                 Row(
@@ -172,6 +172,7 @@ private fun Grid(vm: AppViewModel, items: List<NasEntry>, cell: Dp, emoji: TextU
     val selecting = vm.selection.isNotEmpty()
     LazyVerticalGrid(
         columns = GridCells.Adaptive(cell),
+        state = vm.gridState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),

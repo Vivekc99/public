@@ -29,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,7 +57,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -73,8 +76,9 @@ fun GalleryScreen(vm: AppViewModel, o: Overlay.Gallery) {
     val items = o.items
     val pager = rememberPagerState(initialPage = o.start) { items.size }
     val scope = rememberCoroutineScope()
+    var playError by remember { mutableStateOf<String?>(null) }
     val player = remember {
-        ExoPlayer.Builder(ctx)
+        ExoPlayer.Builder(ctx, DefaultRenderersFactory(ctx).setEnableDecoderFallback(true))
             .setMediaSourceFactory(DefaultMediaSourceFactory(SmbDataSource.Factory(vm.pool)))
             .build()
     }
@@ -85,6 +89,12 @@ fun GalleryScreen(vm: AppViewModel, o: Overlay.Gallery) {
         ctl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         ctl.hide(WindowInsetsCompat.Type.systemBars())
         val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                val detail = generateSequence<Throwable>(error) { it.cause }
+                    .mapNotNull { it.message }.distinct().joinToString("\n")
+                playError = (error.errorCodeName + "\n" + detail).take(600)
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 // When a video/song finishes, move on to the next file.
                 if (state == Player.STATE_ENDED && pager.currentPage + 1 < items.size) {
@@ -104,6 +114,7 @@ fun GalleryScreen(vm: AppViewModel, o: Overlay.Gallery) {
     LaunchedEffect(settled) {
         val e = items[settled]
         val k = kindOf(e.name)
+        playError = null
         if (k == Kind.Video || k == Kind.Audio) {
             player.setMediaItem(
                 MediaItem.Builder()
@@ -129,7 +140,7 @@ fun GalleryScreen(vm: AppViewModel, o: Overlay.Gallery) {
             val e = items[i]
             when (kindOf(e.name)) {
                 Kind.Image -> ImagePage(vm, profile, e)
-                Kind.Video, Kind.Audio -> MediaPage(player, e, active = i == pager.settledPage)
+                Kind.Video, Kind.Audio -> MediaPage(vm, player, e, active = i == pager.settledPage, error = playError)
                 Kind.Other -> FilePage(vm, e)
             }
         }
@@ -145,15 +156,40 @@ fun GalleryScreen(vm: AppViewModel, o: Overlay.Gallery) {
             Text(
                 "${pager.currentPage + 1}/${items.size}  ${items[pager.currentPage].name}",
                 color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(end = 16.dp),
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
             )
+            val cur = items[pager.currentPage]
+            if (kindOf(cur.name) == Kind.Video) {
+                TextButton(onClick = { vm.openInPlayer(cur) }) { Text("Player ↗", color = Color.White) }
+            }
         }
     }
 }
 
 @Composable
-private fun MediaPage(player: ExoPlayer, e: NasEntry, active: Boolean) {
-    if (active) {
+private fun MediaPage(vm: AppViewModel, player: ExoPlayer, e: NasEntry, active: Boolean, error: String?) {
+    if (active && error != null) {
+        Column(
+            Modifier.fillMaxSize().background(Color.Black).padding(24.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("⚠️ Can't play this file here", color = Color.White, fontSize = 20.sp)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Playback failed. If this is 10-bit 4:2:2 footage (e.g. from a Sony camera) the phone's " +
+                    "built-in decoder can't play it. VLC for Android is free and can usually play it.",
+                color = Color.LightGray, textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { vm.openInPlayer(e) }) { Text("Open in VLC / other player") }
+                OutlinedButton(onClick = { vm.saveOne(e) }) { Text("⬇ Save") }
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(error, color = Color.Gray, fontSize = 11.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
+        }
+    } else if (active) {
         val zoom = remember(e.path) { ZoomState() }
         AndroidView(
             modifier = Modifier.fillMaxSize().background(Color.Black).pinchZoom(zoom),

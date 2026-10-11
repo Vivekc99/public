@@ -5,7 +5,10 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
@@ -50,6 +53,28 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     var busy by mutableStateOf<String?>(null); private set
     var showHidden by mutableStateOf(false)
     var overlay by mutableStateOf<Overlay?>(null)
+
+    // Scroll positions live here (not in the screen) so they survive opening a photo/video and coming back.
+    val listState = LazyListState()
+    val gridState = LazyGridState()
+    private val scrollMemory = HashMap<String, IntArray>()
+    var navToken by mutableIntStateOf(0); private set
+
+    private fun scrollKey() = "${current?.id}|$path"
+
+    private fun rememberScroll() {
+        scrollMemory[scrollKey()] = intArrayOf(
+            listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset,
+            gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset,
+        )
+    }
+
+    /** Called by the browser screen after moving to another folder. */
+    suspend fun restoreScroll() {
+        val m = scrollMemory[scrollKey()]
+        listState.scrollToItem(m?.get(0) ?: 0, m?.get(1) ?: 0)
+        gridState.scrollToItem(m?.get(2) ?: 0, m?.get(3) ?: 0)
+    }
 
     val transfers get() = nas.transfers
     val thumbs get() = nas.thumbs
@@ -126,13 +151,15 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         entries = emptyList()
         selection = emptySet()
         path = ""
-        load("")
+        load("", reset = true)
     }
 
     // ---------------------------------------------------------- browsing
 
-    fun load(dir: String) {
+    fun load(dir: String, reset: Boolean = false) {
         val p = current ?: return
+        val navigating = reset || dir != path
+        if (navigating && !reset) rememberScroll()
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             loading = true
@@ -141,6 +168,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 val list = withContext(Dispatchers.IO) { nas.pool.get(p).list(dir) }
                 path = dir
                 entries = list
+                if (navigating) navToken++
                 selection = selection.filter { s -> list.any { it.path == s } }.toSet()
             } catch (e: CancellationException) {
                 throw e
@@ -188,6 +216,28 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         if (e.isDir) { load(e.path); return }
         val files = visibleEntries().filter { !it.isDir }
         overlay = Overlay.Gallery(files, files.indexOf(e).coerceAtLeast(0))
+    }
+
+    /** Hand a video to another app (VLC, MX Player…) that can play formats this phone's decoder can't. */
+    fun openInPlayer(e: NasEntry) {
+        val p = current ?: return
+        val auth = buildString {
+            if (p.user.isNotBlank()) {
+                if (p.domain.isNotBlank()) append(Uri.encode(p.domain)).append(';')
+                append(Uri.encode(p.user))
+                if (p.password.isNotEmpty()) append(':').append(Uri.encode(p.password))
+                append('@')
+            }
+        }
+        val port = if (p.port != 445) ":${p.port}" else ""
+        val file = e.path.split('/').joinToString("/") { Uri.encode(it) }
+        val url = "smb://$auth${p.host}$port/${Uri.encode(p.share)}/$file"
+        intents.trySend(
+            Intent.createChooser(
+                Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), mimeOf(e.name)),
+                "Play with…",
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
     fun saveOne(e: NasEntry) {

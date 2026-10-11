@@ -69,7 +69,7 @@ fun AppRoot(vm: AppViewModel) {
             try {
                 ctx.startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(ctx, "No app installed that can open this file", Toast.LENGTH_LONG).show()
+                Toast.makeText(ctx, "No app found that can open this", Toast.LENGTH_LONG).show()
             }
         }
     }

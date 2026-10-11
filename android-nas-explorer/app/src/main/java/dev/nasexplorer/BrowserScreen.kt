@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,7 @@ fun BrowserScreen(vm: AppViewModel) {
     var sortMenu by remember { mutableStateOf(false) }
     var viewMenu by remember { mutableStateOf(false) }
     var dlg by remember { mutableStateOf<Dlg?>(null) }
+    LaunchedEffect(vm.navToken) { vm.restoreScroll() }
 
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.upload(it) }
     val pickTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { if (it != null) vm.uploadTree(it) }
