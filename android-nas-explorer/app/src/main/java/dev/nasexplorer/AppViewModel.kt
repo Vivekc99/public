@@ -21,8 +21,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 sealed interface Overlay {
-    data class Player(val items: List<NasEntry>, val start: Int) : Overlay
-    data class Image(val entry: NasEntry) : Overlay
+    data class Gallery(val items: List<NasEntry>, val start: Int) : Overlay
     data object Transfers : Overlay
     data class EditProfile(val profile: Profile?) : Overlay
 }
@@ -152,17 +151,17 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun open(e: NasEntry) {
         if (e.isDir) { load(e.path); return }
-        when (val k = kindOf(e.name)) {
-            Kind.Video, Kind.Audio -> {
-                val queue = visibleEntries().filter { kindOf(it.name) == k }
-                overlay = Overlay.Player(queue, queue.indexOf(e).coerceAtLeast(0))
-            }
-            Kind.Image -> overlay = Overlay.Image(e)
-            Kind.Other -> openExternal(e)
-        }
+        val files = visibleEntries().filter { !it.isDir }
+        overlay = Overlay.Gallery(files, files.indexOf(e).coerceAtLeast(0))
     }
 
-    private fun openExternal(e: NasEntry) {
+    fun saveOne(e: NasEntry) {
+        val p = current ?: return
+        transfers.download(p, listOf(e))
+        toast("Saving ${e.name} to Downloads/NAS")
+    }
+
+    fun openExternal(e: NasEntry) {
         val p = current ?: return
         if (e.size > 1L shl 30) { toast("Too big to open directly – use Save to download it"); return }
         viewModelScope.launch {

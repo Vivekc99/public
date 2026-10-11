@@ -48,3 +48,14 @@ fun humanDate(ms: Long): String =
 
 fun Throwable.friendly(): String =
     generateSequence(this) { it.cause }.mapNotNull { it.message }.firstOrNull() ?: javaClass.simpleName
+
+fun bigIconFor(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
+    "pdf" -> "📕"
+    "doc", "docx", "odt", "rtf", "txt", "md" -> "📝"
+    "xls", "xlsx", "csv", "ods" -> "📊"
+    "ppt", "pptx", "odp" -> "📽️"
+    "zip", "rar", "7z", "tar", "gz", "bz2" -> "🗜️"
+    "apk" -> "🤖"
+    "iso", "img" -> "💿"
+    else -> "📄"
+}

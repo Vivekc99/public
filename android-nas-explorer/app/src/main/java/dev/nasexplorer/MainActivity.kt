@@ -75,8 +75,7 @@ fun AppRoot(vm: AppViewModel) {
     }
 
     when (val o = vm.overlay) {
-        is Overlay.Player -> PlayerScreen(vm, o)
-        is Overlay.Image -> ImageScreen(vm, o.entry)
+        is Overlay.Gallery -> GalleryScreen(vm, o)
         Overlay.Transfers -> TransfersScreen(vm)
         is Overlay.EditProfile -> EditProfileScreen(vm, o.profile)
         null -> if (vm.current == null) ProfilesScreen(vm) else BrowserScreen(vm)
