@@ -177,8 +177,15 @@ private fun MediaPage(vm: AppViewModel, player: ExoPlayer, e: NasEntry, active: 
             Text("⚠️ Can't play this file here", color = Color.White, fontSize = 20.sp)
             Spacer(Modifier.height(10.dp))
             Text(
-                "Playback failed. If this is 10-bit 4:2:2 footage (e.g. from a Sony camera) the phone's " +
-                    "built-in decoder can't play it. VLC for Android is free and can usually play it.",
+                if (error.contains("video/avc") && error.contains("10bit")) {
+                    "This is 10-bit H.264 video (typical of Sony XAVC S 4:2:2 / 4K 120p). Phone chips can't " +
+                        "decode 10-bit H.264 – only 10-bit H.265/HEVC. VLC can play it in software, but 4K at " +
+                        "120fps is very demanding and may stutter. For smooth playback on the phone, record " +
+                        "or convert to H.265 (HEVC) 4:2:0."
+                } else {
+                    "Playback failed. If this is 10-bit 4:2:2 footage (e.g. from a Sony camera) the phone's " +
+                        "built-in decoder can't play it. VLC for Android is free and can usually play it."
+                },
                 color = Color.LightGray, textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(18.dp))

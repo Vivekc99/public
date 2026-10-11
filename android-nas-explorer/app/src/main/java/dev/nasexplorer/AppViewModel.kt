@@ -60,6 +60,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private val scrollMemory = HashMap<String, IntArray>()
     var navToken by mutableIntStateOf(0); private set
 
+    private var restoredToken = 0
+
     private fun scrollKey() = "${current?.id}|$path"
 
     private fun rememberScroll() {
@@ -71,6 +73,9 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     /** Called by the browser screen after moving to another folder. */
     suspend fun restoreScroll() {
+        // Only after a real folder change, not every time the screen comes back from a photo/video.
+        if (restoredToken == navToken) return
+        restoredToken = navToken
         val m = scrollMemory[scrollKey()]
         listState.scrollToItem(m?.get(0) ?: 0, m?.get(1) ?: 0)
         gridState.scrollToItem(m?.get(2) ?: 0, m?.get(3) ?: 0)
