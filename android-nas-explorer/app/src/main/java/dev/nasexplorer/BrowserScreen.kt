@@ -107,7 +107,7 @@ fun BrowserScreen(vm: AppViewModel) {
                                 ViewMode.entries.forEach { m ->
                                     DropdownMenuItem(
                                         text = { Text((if (vm.viewMode == m) "✓  " else "     ") + m.label) },
-                                        onClick = { viewMenu = false; vm.setViewMode(m) },
+                                        onClick = { viewMenu = false; vm.chooseViewMode(m) },
                                     )
                                 }
                             }

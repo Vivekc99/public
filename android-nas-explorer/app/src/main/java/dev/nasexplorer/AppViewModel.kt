@@ -56,7 +56,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         runCatching { ViewMode.valueOf(uiPrefs.getString("view", "") ?: "") }.getOrDefault(ViewMode.Simple)
     ); private set
 
-    fun setViewMode(m: ViewMode) {
+    fun chooseViewMode(m: ViewMode) {
         viewMode = m
         uiPrefs.edit().putString("view", m.name).apply()
     }
