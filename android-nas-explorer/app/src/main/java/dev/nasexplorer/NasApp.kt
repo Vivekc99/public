@@ -1,0 +1,16 @@
+package dev.nasexplorer
+
+import android.app.Application
+
+class NasApp : Application() {
+    lateinit var store: ProfileStore
+    lateinit var pool: SessionPool
+    lateinit var transfers: TransferManager
+
+    override fun onCreate() {
+        super.onCreate()
+        store = ProfileStore(this)
+        pool = SessionPool()
+        transfers = TransferManager(this, pool)
+    }
+}
