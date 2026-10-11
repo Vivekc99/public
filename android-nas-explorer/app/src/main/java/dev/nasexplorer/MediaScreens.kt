@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -194,6 +195,7 @@ private fun FilePage(vm: AppViewModel, e: NasEntry) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImagePage(vm: AppViewModel, profile: Profile, entry: NasEntry) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
