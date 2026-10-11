@@ -61,7 +61,7 @@ private sealed interface Dlg {
 @Composable
 fun BrowserScreen(vm: AppViewModel) {
     val profile = vm.current ?: return
-    val items = remember(vm.entries, vm.sort, vm.showHidden) { vm.visibleEntries() }
+    val items = remember(vm.entries, vm.sort, vm.sortDesc, vm.showHidden) { vm.visibleEntries() }
     val selecting = vm.selection.isNotEmpty()
     val tasks by vm.transfers.tasks.collectAsState()
     val activeCount = tasks.count { it.active }
@@ -133,8 +133,15 @@ fun BrowserScreen(vm: AppViewModel) {
                             }
                             DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                                 SortMode.entries.forEach { m ->
-                                    DropdownMenuItem(text = { Text(m.label) },
-                                        onClick = { sortMenu = false; vm.sort = m })
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                (if (vm.sort == m) (if (vm.sortDesc) "▼  " else "▲  ") else "      ") +
+                                                    m.label
+                                            )
+                                        },
+                                        onClick = { sortMenu = false; vm.sortBy(m) },
+                                    )
                                 }
                             }
                         }

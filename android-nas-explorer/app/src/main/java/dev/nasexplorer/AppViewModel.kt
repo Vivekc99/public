@@ -29,7 +29,11 @@ sealed interface Overlay {
 data class Clip(val profile: Profile, val items: List<NasEntry>, val cut: Boolean)
 
 enum class SortMode(val label: String) {
-    Name("Name"), Date("Date (newest first)"), Size("Size (largest first)")
+    Name("Name"),
+    Modified("Date modified"),
+    Created("Date created"),
+    Size("Size"),
+    Type("Type"),
 }
 
 class AppViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -44,7 +48,6 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     var selection by mutableStateOf<Set<String>>(emptySet()); private set
     var clip by mutableStateOf<Clip?>(null); private set
     var busy by mutableStateOf<String?>(null); private set
-    var sort by mutableStateOf(SortMode.Name)
     var showHidden by mutableStateOf(false)
     var overlay by mutableStateOf<Overlay?>(null)
 
@@ -55,6 +58,22 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     var viewMode by mutableStateOf(
         runCatching { ViewMode.valueOf(uiPrefs.getString("view", "") ?: "") }.getOrDefault(ViewMode.Simple)
     ); private set
+
+    var sort by mutableStateOf(
+        runCatching { SortMode.valueOf(uiPrefs.getString("sort", "") ?: "") }.getOrDefault(SortMode.Name)
+    ); private set
+    var sortDesc by mutableStateOf(uiPrefs.getBoolean("desc", false)); private set
+
+    /** Tap the current sort again to flip ascending/descending. */
+    fun sortBy(m: SortMode) {
+        if (m == sort) {
+            sortDesc = !sortDesc
+        } else {
+            sort = m
+            sortDesc = m == SortMode.Modified || m == SortMode.Created || m == SortMode.Size
+        }
+        uiPrefs.edit().putString("sort", sort.name).putBoolean("desc", sortDesc).apply()
+    }
 
     fun chooseViewMode(m: ViewMode) {
         viewMode = m
@@ -138,12 +157,17 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     fun visibleEntries(): List<NasEntry> {
         val base = if (showHidden) entries else entries.filterNot { isHidden(it.name) }
         val dirsFirst = compareBy<NasEntry> { !it.isDir }
-        val cmp: Comparator<NasEntry> = when (sort) {
-            SortMode.Name -> dirsFirst.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
-            SortMode.Date -> dirsFirst.thenByDescending { it.modified }
-            SortMode.Size -> dirsFirst.thenByDescending { it.size }
+        val byName = compareBy<NasEntry, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
+        val key: Comparator<NasEntry> = when (sort) {
+            SortMode.Name -> byName
+            SortMode.Modified -> compareBy<NasEntry> { it.modified }
+            SortMode.Created -> compareBy<NasEntry> { it.created }
+            SortMode.Size -> compareBy<NasEntry> { it.size }
+            SortMode.Type -> compareBy<NasEntry, String>(String.CASE_INSENSITIVE_ORDER) {
+                it.name.substringAfterLast('.', "")
+            }.then(byName)
         }
-        return base.sortedWith(cmp)
+        return base.sortedWith(dirsFirst.then(if (sortDesc) key.reversed() else key))
     }
 
     fun canGoBack() = overlay != null || current != null

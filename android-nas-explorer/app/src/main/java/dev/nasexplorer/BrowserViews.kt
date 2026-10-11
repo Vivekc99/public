@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +61,8 @@ private fun Modifier.itemClick(vm: AppViewModel, e: NasEntry) = combinedClickabl
     onLongClick = { vm.toggle(e) },
 )
 
+private fun AppViewModel.shownDate(e: NasEntry) = if (sort == SortMode.Created) e.created else e.modified
+
 private fun shortDate(ms: Long): String = DateFormat.getDateInstance(DateFormat.SHORT).format(Date(ms))
 
 /** Picture preview for photos/videos, otherwise the file-type emoji. */
@@ -112,7 +115,7 @@ private fun SimpleList(vm: AppViewModel, items: List<NasEntry>, modifier: Modifi
                 Column(Modifier.weight(1f)) {
                     Text(e.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        (if (e.isDir) "" else humanSize(e.size) + " · ") + humanDate(e.modified),
+                        (if (e.isDir) "" else humanSize(e.size) + " · ") + humanDate(vm.shownDate(e)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -129,9 +132,16 @@ private fun DetailsList(vm: AppViewModel, items: List<NasEntry>, modifier: Modif
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
             Spacer(Modifier.width(34.dp))
-            Text("Name", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = dim)
-            Text("Size", Modifier.width(76.dp), style = MaterialTheme.typography.labelMedium, color = dim, textAlign = TextAlign.End)
-            Text("Modified", Modifier.width(84.dp), style = MaterialTheme.typography.labelMedium, color = dim, textAlign = TextAlign.End)
+            val arrow = if (vm.sortDesc) " ▼" else " ▲"
+            fun label(m: SortMode, text: String) = text + if (vm.sort == m) arrow else ""
+            Text(label(SortMode.Name, "Name"), Modifier.weight(1f).clickable { vm.sortBy(SortMode.Name) },
+                style = MaterialTheme.typography.labelMedium, color = dim)
+            Text(label(SortMode.Size, "Size"), Modifier.width(76.dp).clickable { vm.sortBy(SortMode.Size) },
+                style = MaterialTheme.typography.labelMedium, color = dim, textAlign = TextAlign.End)
+            val dateMode = if (vm.sort == SortMode.Created) SortMode.Created else SortMode.Modified
+            Text(label(dateMode, if (dateMode == SortMode.Created) "Created" else "Modified"),
+                Modifier.width(84.dp).clickable { vm.sortBy(dateMode) },
+                style = MaterialTheme.typography.labelMedium, color = dim, textAlign = TextAlign.End)
         }
         HorizontalDivider()
         LazyColumn(Modifier.fillMaxSize()) {
@@ -149,7 +159,7 @@ private fun DetailsList(vm: AppViewModel, items: List<NasEntry>, modifier: Modif
                         style = MaterialTheme.typography.bodyMedium)
                     Text(if (e.isDir) "" else humanSize(e.size), Modifier.width(76.dp),
                         style = MaterialTheme.typography.bodySmall, color = dim, textAlign = TextAlign.End)
-                    Text(shortDate(e.modified), Modifier.width(84.dp),
+                    Text(shortDate(vm.shownDate(e)), Modifier.width(84.dp),
                         style = MaterialTheme.typography.bodySmall, color = dim, textAlign = TextAlign.End)
                 }
             }

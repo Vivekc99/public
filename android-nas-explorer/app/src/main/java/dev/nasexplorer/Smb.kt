@@ -26,6 +26,7 @@ data class NasEntry(
     val isDir: Boolean,
     val size: Long,
     val modified: Long,
+    val created: Long = 0L,
 )
 
 fun joinPath(dir: String, name: String) = if (dir.isEmpty()) name else "$dir/$name"
@@ -97,6 +98,7 @@ class SmbConn(val profile: Profile) : Closeable {
                     isDir = isDir,
                     size = if (isDir) 0L else it.endOfFile,
                     modified = it.lastWriteTime.toEpochMillis(),
+                    created = it.creationTime.toEpochMillis(),
                 )
             }
     }
