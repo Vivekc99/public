@@ -3,13 +3,11 @@ package dev.nasexplorer
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.ExifInterface
+import android.view.LayoutInflater
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -156,10 +154,11 @@ fun GalleryScreen(vm: AppViewModel, o: Overlay.Gallery) {
 @Composable
 private fun MediaPage(player: ExoPlayer, e: NasEntry, active: Boolean) {
     if (active) {
+        val zoom = remember(e.path) { ZoomState() }
         AndroidView(
-            modifier = Modifier.fillMaxSize().background(Color.Black),
+            modifier = Modifier.fillMaxSize().background(Color.Black).pinchZoom(zoom),
             factory = { c ->
-                PlayerView(c).apply {
+                (LayoutInflater.from(c).inflate(R.layout.player_view, null, false) as PlayerView).apply {
                     this.player = player
                     keepScreenOn = true
                 }
@@ -194,18 +193,11 @@ private fun FilePage(vm: AppViewModel, e: NasEntry) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImagePage(vm: AppViewModel, profile: Profile, entry: NasEntry) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    // One finger only pans when zoomed in, so at normal size a swipe goes to the next page.
-    val tState = rememberTransformableState { zoom, pan, _ ->
-        scale = (scale * zoom).coerceIn(1f, 8f)
-        offset = if (scale == 1f) Offset.Zero else offset + pan
-    }
+    val zoom = remember { ZoomState() }
 
     LaunchedEffect(entry.path) {
         try {
@@ -226,16 +218,8 @@ private fun ImagePage(vm: AppViewModel, profile: Profile, entry: NasEntry) {
                 contentDescription = entry.name,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectTapGestures(onDoubleTap = {
-                            if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 3f
-                        })
-                    }
-                    .transformable(state = tState, canPan = { scale > 1f })
-                    .graphicsLayer(
-                        scaleX = scale, scaleY = scale,
-                        translationX = offset.x, translationY = offset.y,
-                    ),
+                    .pointerInput(Unit) { detectTapGestures(onDoubleTap = { zoom.toggle() }) }
+                    .pinchZoom(zoom),
             )
             error != null -> Text(
                 "Couldn't load image: $error",
