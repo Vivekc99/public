@@ -73,4 +73,6 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.5.1")
 
     implementation("com.hierynomus:smbj:0.13.0")
+    implementation("com.github.mwiede:jsch:0.2.20")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

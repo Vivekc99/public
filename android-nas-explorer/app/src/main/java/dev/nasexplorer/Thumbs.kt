@@ -17,7 +17,6 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
-import com.hierynomus.smbj.share.File as SmbFile
 
 private const val THUMB_PX = 384
 
@@ -75,7 +74,7 @@ class ThumbLoader(ctx: Context, private val pool: SessionPool) {
         }
     }
 
-    private fun imageThumb(conn: SmbConn, e: NasEntry): Bitmap? {
+    private fun imageThumb(conn: Conn, e: NasEntry): Bitmap? {
         conn.openRead(e.path).use { f ->
             if (e.size <= 20L shl 20) {
                 val bytes = f.inputStream.use { it.readBytes() }
@@ -109,7 +108,7 @@ class ThumbLoader(ctx: Context, private val pool: SessionPool) {
         }
     }
 
-    private fun videoThumb(conn: SmbConn, e: NasEntry): Bitmap? {
+    private fun videoThumb(conn: Conn, e: NasEntry): Bitmap? {
         val file = conn.openRead(e.path)
         val r = MediaMetadataRetriever()
         try {
@@ -123,7 +122,7 @@ class ThumbLoader(ctx: Context, private val pool: SessionPool) {
 }
 
 /** Random-access reads for MediaMetadataRetriever, with a small read-ahead block to avoid many tiny SMB requests. */
-private class SmbMediaDataSource(private val f: SmbFile, private val total: Long) : MediaDataSource() {
+private class SmbMediaDataSource(private val f: RemoteFile, private val total: Long) : MediaDataSource() {
     private val block = ByteArray(512 * 1024)
     private var blockStart = -1L
     private var blockLen = 0

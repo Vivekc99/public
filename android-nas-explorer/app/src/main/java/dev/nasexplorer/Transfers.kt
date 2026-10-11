@@ -135,7 +135,7 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
         }
     }
 
-    private suspend fun downloadDir(conn: SmbConn, remote: String, relDir: String, pr: Progress) {
+    private suspend fun downloadDir(conn: Conn, remote: String, relDir: String, pr: Progress) {
         for (c in conn.list(remote)) {
             currentCoroutineContext().ensureActive()
             if (c.isDir) downloadDir(conn, c.path, "$relDir/${c.name}", pr)
@@ -143,7 +143,7 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
         }
     }
 
-    private suspend fun downloadFile(conn: SmbConn, remote: String, name: String, relDir: String, pr: Progress) {
+    private suspend fun downloadFile(conn: Conn, remote: String, name: String, relDir: String, pr: Progress) {
         val cr = app.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
@@ -175,8 +175,9 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
             val name = displayName(u)
             enqueue("Upload", name) { pr ->
                 val conn = pool.get(p)
-                pr.total.addAndGet(sizeOf(u))
-                uploadStream(conn, remoteDir, name, pr) {
+                val sz = sizeOf(u)
+                pr.total.addAndGet(sz)
+                uploadStream(conn, remoteDir, name, sz, pr) {
                     app.contentResolver.openInputStream(u) ?: throw IllegalStateException("Cannot read $name")
                 }
             }
@@ -198,7 +199,7 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
     private fun docTreeSize(d: DocumentFile): Long =
         d.listFiles().sumOf { if (it.isDirectory) docTreeSize(it) else it.length() }
 
-    private suspend fun uploadDoc(conn: SmbConn, dir: DocumentFile, remoteDir: String, pr: Progress) {
+    private suspend fun uploadDoc(conn: Conn, dir: DocumentFile, remoteDir: String, pr: Progress) {
         for (c in dir.listFiles()) {
             currentCoroutineContext().ensureActive()
             val n = c.name ?: continue
@@ -207,7 +208,7 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
                 if (!conn.exists(sub)) conn.mkdir(sub)
                 uploadDoc(conn, c, sub, pr)
             } else {
-                uploadStream(conn, remoteDir, n, pr) {
+                uploadStream(conn, remoteDir, n, c.length(), pr) {
                     app.contentResolver.openInputStream(c.uri) ?: throw IllegalStateException("Cannot read $n")
                 }
             }
@@ -215,11 +216,11 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
     }
 
     private suspend fun uploadStream(
-        conn: SmbConn, remoteDir: String, name: String, pr: Progress, open: () -> InputStream,
+        conn: Conn, remoteDir: String, name: String, size: Long, pr: Progress, open: () -> InputStream,
     ) {
         val target = joinPath(remoteDir, conn.uniqueName(remoteDir, name))
         try {
-            conn.openWrite(target).use { f ->
+            conn.openWrite(target, size).use { f ->
                 f.outputStream.use { out -> open().use { ins -> pump(ins, out, pr.done) } }
             }
         } catch (t: Throwable) {
@@ -262,7 +263,7 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
         }
     }
 
-    private suspend fun copyEntry(src: SmbConn, e: NasEntry, dst: SmbConn, dstDir: String, pr: Progress) {
+    private suspend fun copyEntry(src: Conn, e: NasEntry, dst: Conn, dstDir: String, pr: Progress) {
         currentCoroutineContext().ensureActive()
         val newPath = joinPath(dstDir, dst.uniqueName(dstDir, e.name))
         if (e.isDir) {
@@ -272,7 +273,7 @@ class TransferManager(private val app: Application, private val pool: SessionPoo
             try {
                 src.openRead(e.path).use { rf ->
                     rf.inputStream.use { ins ->
-                        dst.openWrite(newPath).use { wf -> wf.outputStream.use { out -> pump(ins, out, pr.done) } }
+                        dst.openWrite(newPath, e.size).use { wf -> wf.outputStream.use { out -> pump(ins, out, pr.done) } }
                     }
                 }
             } catch (t: Throwable) {

@@ -13,6 +13,12 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+enum class Protocol(val label: String, val defaultPort: Int) {
+    SMB("SMB", 445),
+    SFTP("SFTP", 22),
+    WEBDAV("WebDAV", 443),
+}
+
 data class Profile(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -22,7 +28,47 @@ data class Profile(
     val domain: String = "",
     val user: String = "",
     val password: String = "",
-)
+    val protocol: Protocol = Protocol.SMB,
+    /** WebDAV only. */
+    val https: Boolean = true,
+    val trustSelfSigned: Boolean = false,
+    /** SFTP only: optional private key (PEM text) instead of a password. */
+    val privateKey: String = "",
+) {
+    /** Human-readable address for lists. */
+    fun address(): String = when (protocol) {
+        Protocol.SMB -> "\\\\$host\\$share"
+        Protocol.SFTP -> "sftp://$host" + (if (port != 22) ":$port" else "") + (if (share.isBlank()) "" else "/" + share.trim('/'))
+        Protocol.WEBDAV -> (if (https) "https" else "http") + "://$host:$port/" + share.trim('/')
+    }
+}
+
+/** Remembers server identities the first time we connect (SSH keys / self-signed certs) and refuses if they change. */
+object HostKeys {
+    private var prefs: android.content.SharedPreferences? = null
+
+    fun init(ctx: Context) { prefs = ctx.getSharedPreferences("hostkeys", Context.MODE_PRIVATE) }
+
+    fun verify(id: String, fingerprint: String) {
+        val p = prefs ?: return
+        val known = p.getString(id, null)
+        if (known == null) {
+            p.edit().putString(id, fingerprint).apply()
+        } else if (known != fingerprint) {
+            throw java.security.cert.CertificateException(
+                "The server's identity changed – this could be someone intercepting the connection. " +
+                    "If you changed the server on purpose, edit this NAS and press Save to trust it again."
+            )
+        }
+    }
+
+    fun forget(host: String) {
+        val p = prefs ?: return
+        val e = p.edit()
+        p.all.keys.filter { it.contains(host) }.forEach { e.remove(it) }
+        e.apply()
+    }
+}
 
 /** Encrypts saved passwords with a key that lives in the Android Keystore. */
 private object Crypto {
@@ -80,6 +126,10 @@ class ProfileStore(ctx: Context) {
                 domain = o.optString("domain"),
                 user = o.optString("user"),
                 password = Crypto.decrypt(o.optString("pw")),
+                protocol = runCatching { Protocol.valueOf(o.optString("proto", "SMB")) }.getOrDefault(Protocol.SMB),
+                https = o.optBoolean("https", true),
+                trustSelfSigned = o.optBoolean("selfsigned", false),
+                privateKey = Crypto.decrypt(o.optString("pk")),
             )
         }
     }
@@ -92,6 +142,8 @@ class ProfileStore(ctx: Context) {
                     .put("id", p.id).put("name", p.name).put("host", p.host)
                     .put("port", p.port).put("share", p.share).put("domain", p.domain)
                     .put("user", p.user).put("pw", Crypto.encrypt(p.password))
+                    .put("proto", p.protocol.name).put("https", p.https)
+                    .put("selfsigned", p.trustSelfSigned).put("pk", Crypto.encrypt(p.privateKey))
             )
         }
         prefs.edit().putString("list", arr.toString()).apply()

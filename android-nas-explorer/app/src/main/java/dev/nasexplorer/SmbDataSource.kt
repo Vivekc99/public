@@ -8,7 +8,6 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DataSpec
 import java.io.IOException
-import com.hierynomus.smbj.share.File as SmbFile
 
 fun smbUri(profileId: String, path: String): Uri =
     Uri.Builder().scheme("smb").authority(profileId).path("/$path").build()
@@ -18,7 +17,7 @@ fun smbUri(profileId: String, path: String): Uri =
  * Reads ahead in 1 MB blocks so playback isn't limited by SMB round-trip time.
  */
 class SmbDataSource(private val pool: SessionPool) : BaseDataSource(true) {
-    private var file: SmbFile? = null
+    private var file: RemoteFile? = null
     private var uri: Uri? = null
     private var pos = 0L
     private var remaining = 0L

@@ -132,6 +132,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------ profiles
 
     fun saveProfile(p: Profile) {
+        HostKeys.forget(p.host)
         profiles = if (profiles.any { it.id == p.id }) profiles.map { if (it.id == p.id) p else it } else profiles + p
         nas.store.save(profiles)
         overlay = null
@@ -147,7 +148,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     fun testProfile(p: Profile, onResult: (String) -> Unit) {
         viewModelScope.launch {
             val r = withContext(Dispatchers.IO) {
-                runCatching { SmbConn(p).use { it.list("").size } }
+                runCatching { makeConn(p).use { it.list("").size } }
             }
             onResult(r.fold({ "Connected – $it items in share root" }, { "Failed: ${it.friendly()}" }))
         }
@@ -320,15 +321,28 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         val p = current ?: return
         val auth = buildString {
             if (p.user.isNotBlank()) {
-                if (p.domain.isNotBlank()) append(Uri.encode(p.domain)).append(';')
+                if (p.protocol == Protocol.SMB && p.domain.isNotBlank()) append(Uri.encode(p.domain)).append(';')
                 append(Uri.encode(p.user))
-                if (p.password.isNotEmpty()) append(':').append(Uri.encode(p.password))
+                if (p.password.isNotEmpty() && p.privateKey.isBlank()) append(':').append(Uri.encode(p.password))
                 append('@')
             }
         }
-        val port = if (p.port != 445) ":${p.port}" else ""
         val file = e.path.split('/').joinToString("/") { Uri.encode(it) }
-        val url = "smb://$auth${p.host}$port/${Uri.encode(p.share)}/$file"
+        val url = when (p.protocol) {
+            Protocol.SMB -> {
+                val port = if (p.port != 445) ":${p.port}" else ""
+                "smb://$auth${p.host}$port/${Uri.encode(p.share)}/$file"
+            }
+            Protocol.SFTP -> {
+                val base = p.share.trim().trim('/')
+                "sftp://$auth${p.host}:${p.port}/" + (if (base.isEmpty()) "" else "${base.split('/').joinToString("/") { Uri.encode(it) }}/") + file
+            }
+            Protocol.WEBDAV -> {
+                val base = p.share.trim().trim('/')
+                (if (p.https) "https" else "http") + "://$auth${p.host}:${p.port}/" +
+                    (if (base.isEmpty()) "" else "${base.split('/').joinToString("/") { Uri.encode(it) }}/") + file
+            }
+        }
         intents.trySend(
             Intent.createChooser(
                 Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), mimeOf(e.name)),

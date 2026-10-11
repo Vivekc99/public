@@ -10,6 +10,7 @@ class NasApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        HostKeys.init(this)
         store = ProfileStore(this)
         pool = SessionPool()
         transfers = TransferManager(this, pool)

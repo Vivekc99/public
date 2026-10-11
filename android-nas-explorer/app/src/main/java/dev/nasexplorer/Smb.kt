@@ -1,6 +1,7 @@
 package dev.nasexplorer
 
 import com.hierynomus.msdtyp.AccessMask
+import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2CreateOptions
 import com.hierynomus.mssmb2.SMB2ShareAccess
@@ -11,30 +12,24 @@ import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
-import com.hierynomus.msfscc.FileAttributes
-import java.io.Closeable
 import java.io.IOException
 import java.util.EnumSet
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import com.hierynomus.smbj.share.File as SmbFile
 
-data class NasEntry(
-    val name: String,
-    /** Path relative to the share root, '/' separated, no leading slash. */
-    val path: String,
-    val isDir: Boolean,
-    val size: Long,
-    val modified: Long,
-    val created: Long = 0L,
-)
-
-fun joinPath(dir: String, name: String) = if (dir.isEmpty()) name else "$dir/$name"
-fun parentPath(path: String) = path.substringBeforeLast('/', "")
 private fun sp(path: String) = path.trim('/').replace('/', '\\')
 
-/** One connection to one share on one NAS. Reconnects automatically if the link drops. */
-class SmbConn(val profile: Profile) : Closeable {
+private class SmbRemoteFile(private val f: SmbFile) : RemoteFile {
+    override val length: Long by lazy { f.fileInformation.standardInformation.endOfFile }
+    override val inputStream get() = f.inputStream
+    override val outputStream get() = f.outputStream
+    override fun read(buffer: ByteArray, fileOffset: Long, offset: Int, len: Int) =
+        f.read(buffer, fileOffset, offset, len)
+    override fun close() = f.close()
+}
+
+/** SMB 2/3 share (Synology, QNAP, Windows, Unraid, TrueNAS, routers…). Reconnects if the link drops. */
+class SmbConn(profile: Profile) : Conn(profile) {
     private var client: SMBClient? = null
     private var connection: Connection? = null
     private var session: Session? = null
@@ -87,7 +82,7 @@ class SmbConn(val profile: Profile) : Closeable {
         }
     }
 
-    fun list(dir: String): List<NasEntry> = op { s ->
+    override fun list(dir: String): List<NasEntry> = op { s ->
         s.list(sp(dir))
             .filter { it.fileName != "." && it.fileName != ".." }
             .map {
@@ -103,9 +98,9 @@ class SmbConn(val profile: Profile) : Closeable {
             }
     }
 
-    fun exists(path: String): Boolean = op { s -> s.fileExists(sp(path)) || s.folderExists(sp(path)) }
+    override fun exists(path: String): Boolean = op { s -> s.fileExists(sp(path)) || s.folderExists(sp(path)) }
 
-    fun openRead(path: String): SmbFile = op { s ->
+    override fun openRead(path: String): RemoteFile = SmbRemoteFile(op { s ->
         s.openFile(
             sp(path),
             EnumSet.of(AccessMask.GENERIC_READ),
@@ -114,9 +109,9 @@ class SmbConn(val profile: Profile) : Closeable {
             SMB2CreateDisposition.FILE_OPEN,
             null,
         )
-    }
+    })
 
-    fun openWrite(path: String): SmbFile = op { s ->
+    override fun openWrite(path: String, size: Long): RemoteFile = SmbRemoteFile(op { s ->
         s.openFile(
             sp(path),
             EnumSet.of(AccessMask.GENERIC_WRITE),
@@ -125,53 +120,24 @@ class SmbConn(val profile: Profile) : Closeable {
             SMB2CreateDisposition.FILE_OVERWRITE_IF,
             EnumSet.of(SMB2CreateOptions.FILE_SEQUENTIAL_ONLY),
         )
+    })
+
+    override fun mkdir(path: String) { op { s -> s.mkdir(sp(path)) } }
+
+    override fun delete(path: String, isDir: Boolean) {
+        op { s -> if (isDir) s.rmdir(sp(path), true) else s.rm(sp(path)) }
     }
 
-    fun fileSize(f: SmbFile): Long = f.fileInformation.standardInformation.endOfFile
-
-    fun mkdir(path: String) = op { s -> s.mkdir(sp(path)) }
-
-    fun delete(path: String, isDir: Boolean) = op { s ->
-        if (isDir) s.rmdir(sp(path), true) else s.rm(sp(path))
-    }
-
-    fun rename(from: String, to: String) = op { s ->
-        s.open(
-            sp(from),
-            EnumSet.of(AccessMask.GENERIC_ALL),
-            null,
-            SMB2ShareAccess.ALL,
-            SMB2CreateDisposition.FILE_OPEN,
-            null,
-        ).use { it.rename(sp(to), false) }
-    }
-
-    /** Total size in bytes of everything under a folder. */
-    fun treeSize(dir: String): Long =
-        list(dir).sumOf { if (it.isDir) treeSize(it.path) else it.size }
-
-    /** Returns [name], or "name (1).ext", "name (2).ext"… so nothing is ever overwritten. */
-    fun uniqueName(dir: String, name: String): String {
-        if (!exists(joinPath(dir, name))) return name
-        val dot = name.lastIndexOf('.')
-        val base = if (dot > 0) name.substring(0, dot) else name
-        val ext = if (dot > 0) name.substring(dot) else ""
-        var i = 1
-        while (true) {
-            val candidate = "$base ($i)$ext"
-            if (!exists(joinPath(dir, candidate))) return candidate
-            i++
+    override fun rename(from: String, to: String) {
+        op { s ->
+            s.open(
+                sp(from),
+                EnumSet.of(AccessMask.GENERIC_ALL),
+                null,
+                SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN,
+                null,
+            ).use { it.rename(sp(to), false) }
         }
     }
-}
-
-class SessionPool {
-    private val map = ConcurrentHashMap<String, SmbConn>()
-
-    fun get(p: Profile): SmbConn = map.compute(p.id) { _, old ->
-        if (old != null && old.profile == p) old else { old?.close(); SmbConn(p) }
-    }!!
-
-    fun find(id: String): SmbConn? = map[id]
-    fun drop(id: String) { map.remove(id)?.close() }
 }
